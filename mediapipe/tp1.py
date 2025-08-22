@@ -39,28 +39,22 @@ def resized_to_height(img, target_h):
 # ---------- Abrir cámara multiplataforma ----------
 def open_camera():
     plat = sys.platform
-    # Elegir backend por SO (si existe)
-    if plat.startswith("darwin"):      # macOS
+    if plat.startswith("darwin"):
         backend = cv2.CAP_AVFOUNDATION
-    elif plat.startswith("win"):       # Windows
+    elif plat.startswith("win"):
         backend = cv2.CAP_DSHOW
-    else:                              # Linux u otros
+    else:
         backend = cv2.CAP_V4L2
-
-    # Intento por índices con ese backend
     for idx in (0, 1, 2):
         cap = cv2.VideoCapture(idx, backend)
         if cap.isOpened():
             return cap
         cap.release()
-
-    # Fallback: sin backend explícito
     for idx in (0, 1, 2):
         cap = cv2.VideoCapture(idx)
         if cap.isOpened():
             return cap
         cap.release()
-
     raise RuntimeError("No pude abrir ninguna cámara (probé índices 0,1,2).")
 
 # ---------- Cargar PNGs (misma carpeta que este .py) ----------
@@ -69,7 +63,6 @@ png_V    = cv2.imread(str(HERE / "Peace Emoji.png"),     cv2.IMREAD_UNCHANGED)
 png_ILY  = cv2.imread(str(HERE / "Rock Emoji.png"),      cv2.IMREAD_UNCHANGED)
 png_THUP = cv2.imread(str(HERE / "Thumbs Up Emoji.png"), cv2.IMREAD_UNCHANGED)
 emoji_png = {"V": png_V, "ILY": png_ILY, "THUP": png_THUP}
-
 for k, img in emoji_png.items():
     if img is None:
         print(f"[WARN] No pude cargar PNG para {k}. Verificá nombre/ubicación.")
@@ -84,10 +77,9 @@ holistic = mp_holistic.Holistic(min_detection_confidence=0.6, min_tracking_confi
 
 # ---------- Juego ----------
 TARGETS = [("ILY","ILY"), ("V","V"), ("THUP","THUP")]
-ROUND_TIME = 2.0          # tiempo máximo por gesto
-GAME_TIME  = 10.0         # duración total
+ROUND_TIME = 2.0
+GAME_TIME  = 10.0
 score = 0
-
 current_name, _ = random.choice(TARGETS)
 round_start = time.time()
 game_start  = time.time()
@@ -121,9 +113,9 @@ def classify_gesture(hand_lms, handed):
     pky = finger_up(lm,"pinky",handed)
     th_side = finger_up(lm,"thumb",handed)
     th_up   = thumb_up_vertical(lm)
-    if idx and mid and not ring and not pky: return "V"      # ✌️
-    if th_up and not idx and not mid and not ring and not pky: return "THUP"  # 👍
-    if idx and pky and not mid and not ring and (th_side or th_up): return "ILY"  # 🤟
+    if idx and mid and not ring and not pky: return "V"
+    if th_up and not idx and not mid and not ring and not pky: return "THUP"
+    if idx and pky and not mid and not ring and (th_side or th_up): return "ILY"
     return None
 
 # ---------- Loop ----------
@@ -149,29 +141,40 @@ while True:
         vals, cnts = np.unique(list(history), return_counts=True)
         detected = vals[np.argmax(cnts)]
 
-    # HUD: solo tiempo total y puntaje
+    # HUD: panel izquierdo
     elapsed_game = time.time() - game_start
-    cv2.rectangle(frame, (10,10), (360,110), (0,0,0), -1)
-    cv2.putText(frame, f"Juego: {max(0, int(GAME_TIME - elapsed_game))}s",
-                (20,50), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (255,255,255), 2)
-    cv2.putText(frame, f"Puntaje: {score}",
-                (20,90), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0,255,255), 2)
+    cv2.rectangle(frame, (10,10), (500,110), (0,0,0), -1)
 
-    # Mostrar objetivo (PNG) arriba a la derecha
-    target_png = resized_to_height(emoji_png.get(current_name), 140)
-    H, W = frame.shape[:2]
+    # Texto del contador (izquierda)
+    hud_left = 20
+    hud_top  = 50
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    font_scale = 0.9
+    thickness = 2
+    time_text = f"Juego: {max(0, int(GAME_TIME - elapsed_game))}s"
+    cv2.putText(frame, time_text, (hud_left, hud_top), font, font_scale, (255,255,255), thickness)
+    cv2.putText(frame, f"Puntaje: {score}", (hud_left, hud_top+40), font, font_scale, (0,255,255), thickness)
+
+    # Medimos ancho del texto para ubicar el PNG a su derecha
+    (text_w, text_h), _ = cv2.getTextSize(time_text, font, font_scale, thickness)
+    png_target_h = 70  # alto del PNG para que entre en el panel
+    target_png = resized_to_height(emoji_png.get(current_name), png_target_h)
+
     if target_png is not None:
-        frame = overlay_png_at(frame, target_png, x=W - (target_png.shape[1] + 20), y=20)
+        x_png = hud_left + text_w + 15     # a la derecha del texto
+        y_png = 10 + max(0, (100 - png_target_h)//2)  # centrado vertical dentro del panel (10..110)
+        frame = overlay_png_at(frame, target_png, x=x_png, y=y_png)
 
     # Acierto / cambio de objetivo
-    if detected == current_name and (time.time() - round_start) <= ROUND_TIME:
+    if detected == current_name and (time.time() - round_start) <= 2.0:
         score += 1
+        H, W = frame.shape[:2]
         cv2.putText(frame, "¡ACIERTO!", (W//2 - 120, H - 30),
-                    cv2.FONT_HERSHEY_SIMPLEX, 1.1, (0,255,0), 3)
+                    font, 1.1, (0,255,0), 3)
         current_name, _ = random.choice(TARGETS)
         round_start = time.time()
         history.clear()
-    elif (time.time() - round_start) > ROUND_TIME:
+    elif (time.time() - round_start) > 2.0:
         current_name, _ = random.choice(TARGETS)
         round_start = time.time()
         history.clear()
