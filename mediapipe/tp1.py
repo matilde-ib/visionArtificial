@@ -1,5 +1,4 @@
-# Requisitos: pip install mediapipe opencv-python numpy
-import time, random
+import time, random, sys
 from collections import deque
 from pathlib import Path
 
@@ -7,14 +6,13 @@ import cv2
 import numpy as np
 import mediapipe as mp
 
-# ---------- Utiles para PNG con alfa ----------
+# ---------- Utiles PNG ----------
 def overlay_png_at(bg, fg_bgra, x, y):
-    """Pega fg (BGRA) sobre bg (BGR) en (x,y) respetando alfa."""
     if fg_bgra is None:
         return bg
     H, W = bg.shape[:2]
     h, w = fg_bgra.shape[:2]
-    if x >= W or y >= H: 
+    if x >= W or y >= H:
         return bg
     x2, y2 = min(x + w, W), min(y + h, H)
     fg = fg_bgra[0:(y2 - y), 0:(x2 - x)]
@@ -29,31 +27,55 @@ def overlay_png_at(bg, fg_bgra, x, y):
     return bg
 
 def resized_to_height(img, target_h):
-    """Escala manteniendo aspecto para que tenga altura = target_h."""
-    if img is None: 
+    if img is None:
         return None
     h, w = img.shape[:2]
-    if h == target_h: 
+    if h == target_h:
         return img
     scale = target_h / float(h)
     new_w = max(1, int(w * scale))
     return cv2.resize(img, (new_w, target_h), interpolation=cv2.INTER_AREA)
 
+# ---------- Abrir cámara multiplataforma ----------
+def open_camera():
+    plat = sys.platform
+    # Elegir backend por SO (si existe)
+    if plat.startswith("darwin"):      # macOS
+        backend = cv2.CAP_AVFOUNDATION
+    elif plat.startswith("win"):       # Windows
+        backend = cv2.CAP_DSHOW
+    else:                              # Linux u otros
+        backend = cv2.CAP_V4L2
+
+    # Intento por índices con ese backend
+    for idx in (0, 1, 2):
+        cap = cv2.VideoCapture(idx, backend)
+        if cap.isOpened():
+            return cap
+        cap.release()
+
+    # Fallback: sin backend explícito
+    for idx in (0, 1, 2):
+        cap = cv2.VideoCapture(idx)
+        if cap.isOpened():
+            return cap
+        cap.release()
+
+    raise RuntimeError("No pude abrir ninguna cámara (probé índices 0,1,2).")
+
 # ---------- Cargar PNGs (misma carpeta que este .py) ----------
 HERE = Path(__file__).resolve().parent
-png_V    = cv2.imread(str(HERE / "Peace Emoji.png"),      cv2.IMREAD_UNCHANGED)
-png_ILY  = cv2.imread(str(HERE / "Rock Emoji.png"),       cv2.IMREAD_UNCHANGED)
-png_THUP = cv2.imread(str(HERE / "Thumbs Up Emoji.png"),  cv2.IMREAD_UNCHANGED)
-
+png_V    = cv2.imread(str(HERE / "Peace Emoji.png"),     cv2.IMREAD_UNCHANGED)
+png_ILY  = cv2.imread(str(HERE / "Rock Emoji.png"),      cv2.IMREAD_UNCHANGED)
+png_THUP = cv2.imread(str(HERE / "Thumbs Up Emoji.png"), cv2.IMREAD_UNCHANGED)
 emoji_png = {"V": png_V, "ILY": png_ILY, "THUP": png_THUP}
+
 for k, img in emoji_png.items():
     if img is None:
-        print(f"[WARN] No pude cargar PNG para {k}. Revisá el nombre exacto y la carpeta.")
+        print(f"[WARN] No pude cargar PNG para {k}. Verificá nombre/ubicación.")
 
-# ---------- Cámara (macOS) ----------
-cap = cv2.VideoCapture(1, cv2.CAP_AVFOUNDATION)  # 1 suele ser FaceTime; si no, 0
-if not cap.isOpened():
-    cap = cv2.VideoCapture(0, cv2.CAP_AVFOUNDATION)
+# ---------- Cámara ----------
+cap = open_camera()
 
 # ---------- MediaPipe ----------
 mp_holistic = mp.solutions.holistic
@@ -62,14 +84,13 @@ holistic = mp_holistic.Holistic(min_detection_confidence=0.6, min_tracking_confi
 
 # ---------- Juego ----------
 TARGETS = [("ILY","ILY"), ("V","V"), ("THUP","THUP")]
-ROUND_TIME = 2.0            # tiempo máx para acertar cada objetivo
-GAME_TIME  = 10.0           # duración total (lo único que mostramos)
+ROUND_TIME = 2.0          # tiempo máximo por gesto
+GAME_TIME  = 10.0         # duración total
 score = 0
 
 current_name, _ = random.choice(TARGETS)
 round_start = time.time()
 game_start  = time.time()
-
 history = deque(maxlen=5)
 
 # Landmarks
@@ -100,9 +121,9 @@ def classify_gesture(hand_lms, handed):
     pky = finger_up(lm,"pinky",handed)
     th_side = finger_up(lm,"thumb",handed)
     th_up   = thumb_up_vertical(lm)
-    if idx and mid and not ring and not pky: return "V"
-    if th_up and not idx and not mid and not ring and not pky: return "THUP"
-    if idx and pky and not mid and not ring and (th_side or th_up): return "ILY"
+    if idx and mid and not ring and not pky: return "V"      # ✌️
+    if th_up and not idx and not mid and not ring and not pky: return "THUP"  # 👍
+    if idx and pky and not mid and not ring and (th_side or th_up): return "ILY"  # 🤟
     return None
 
 # ---------- Loop ----------
@@ -111,7 +132,6 @@ while True:
     if not ok: break
     frame = cv2.flip(frame, 1)
 
-    # detección manos
     rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
     res = holistic.process(rgb)
 
@@ -129,21 +149,21 @@ while True:
         vals, cnts = np.unique(list(history), return_counts=True)
         detected = vals[np.argmax(cnts)]
 
-    # tiempos
+    # HUD: solo tiempo total y puntaje
     elapsed_game = time.time() - game_start
-    # UI: solo contador del juego y puntaje
     cv2.rectangle(frame, (10,10), (360,110), (0,0,0), -1)
     cv2.putText(frame, f"Juego: {max(0, int(GAME_TIME - elapsed_game))}s",
                 (20,50), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (255,255,255), 2)
     cv2.putText(frame, f"Puntaje: {score}",
                 (20,90), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0,255,255), 2)
 
-    # dibujar OBJETIVO (PNG) arriba derecha con altura 140 px
+    # Mostrar objetivo (PNG) arriba a la derecha
     target_png = resized_to_height(emoji_png.get(current_name), 140)
     H, W = frame.shape[:2]
-    frame = overlay_png_at(frame, target_png, x=W - (target_png.shape[1] + 20), y=20)
+    if target_png is not None:
+        frame = overlay_png_at(frame, target_png, x=W - (target_png.shape[1] + 20), y=20)
 
-    # lógica del juego: acierto dentro de ROUND_TIME => +1 y nuevo objetivo
+    # Acierto / cambio de objetivo
     if detected == current_name and (time.time() - round_start) <= ROUND_TIME:
         score += 1
         cv2.putText(frame, "¡ACIERTO!", (W//2 - 120, H - 30),
@@ -151,7 +171,6 @@ while True:
         current_name, _ = random.choice(TARGETS)
         round_start = time.time()
         history.clear()
-    # si se acaba el tiempo de la ronda y no acertaste, solo cambia objetivo (sin mensaje)
     elif (time.time() - round_start) > ROUND_TIME:
         current_name, _ = random.choice(TARGETS)
         round_start = time.time()
