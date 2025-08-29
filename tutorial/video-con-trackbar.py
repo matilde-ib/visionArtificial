@@ -30,7 +30,7 @@ def main():
         cv2.imshow(WINDOW_NAME, frame)
         
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        # cv2.imshow('gray', gray)
+        cv2.imshow('gray', gray)
 
         trackbar_thresh_value = get_trackbar_value(TRACKBAR_THRESH_NAME, WINDOW_NAME)
         _, thresh = cv2.threshold(gray, trackbar_thresh_value, 255, cv2.THRESH_BINARY)
@@ -40,7 +40,7 @@ def main():
         kernel = cv2.getStructuringElement(cv2.MORPH_CROSS, (kernel_size_value, kernel_size_value))
         
         opening = cv2.morphologyEx(thresh, cv2.MORPH_OPEN, kernel)
-        # cv2.imshow('opening', opening)
+        cv2.imshow('opening', opening)
 
         closing = cv2.morphologyEx(opening, cv2.MORPH_CLOSE, kernel)
         cv2.imshow('closing', closing)
