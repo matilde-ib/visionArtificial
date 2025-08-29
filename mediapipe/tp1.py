@@ -6,6 +6,9 @@ import cv2
 import numpy as np
 import mediapipe as mp
 
+import os
+os.chdir(os.path.dirname(__file__))
+
 # ---------- Utiles PNG ----------
 def overlay_png_at(bg, fg_bgra, x, y):
     if fg_bgra is None:
@@ -59,9 +62,16 @@ def open_camera():
 
 # ---------- Cargar PNGs (misma carpeta que este .py) ----------
 HERE = Path(__file__).resolve().parent
-png_V    = cv2.imread(str(HERE / "Peace Emoji.png"),     cv2.IMREAD_UNCHANGED)
-png_ILY  = cv2.imread(str(HERE / "Rock Emoji.png"),      cv2.IMREAD_UNCHANGED)
-png_THUP = cv2.imread(str(HERE / "Thumbs Up Emoji.png"), cv2.IMREAD_UNCHANGED)
+from PIL import Image
+import numpy as np
+def load_emoji(filename):
+    img_pil = Image.open(HERE / filename).convert("RGBA")
+    emoji = np.array(img_pil)
+    return cv2.cvtColor(emoji, cv2.COLOR_RGBA2BGRA)
+
+png_V    = load_emoji("Peace Emoji.png")
+png_ILY  = load_emoji("Rock Emoji.png")
+png_THUP = load_emoji("Thumbs Up Emoji.png")
 emoji_png = {"V": png_V, "ILY": png_ILY, "THUP": png_THUP}
 for k, img in emoji_png.items():
     if img is None:
