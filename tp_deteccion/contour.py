@@ -22,4 +22,4 @@ def compare_contours(contour_to_compare, saved_contours, max_diff):
 
 
 def get_bounding_rect(contour):
-    return cv2.boundingRect(contour)
+    return cv2.boundingRect(contour) ## 
