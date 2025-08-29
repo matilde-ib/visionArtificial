@@ -60,6 +60,11 @@ def open_camera():
         cap.release()
     raise RuntimeError("No pude abrir ninguna cámara (probé índices 0,1,2).")
 
+def choose_new_target(prev, targets):
+    # targets = [("ILY","ILY"), ("V","V"), ("THUP","THUP")]
+    opciones = [name for (name, _) in targets if name != prev]
+    return random.choice(opciones) if opciones else prev
+
 # ---------- Cargar PNGs (misma carpeta que este .py) ----------
 HERE = Path(__file__).resolve().parent
 from PIL import Image
@@ -90,7 +95,7 @@ TARGETS = [("ILY","ILY"), ("V","V"), ("THUP","THUP")]
 ROUND_TIME = 2.0
 GAME_TIME  = 10.0
 score = 0
-current_name, _ = random.choice(TARGETS)
+current_name = choose_new_target(None, TARGETS)  # elige cualquiera para empezar
 round_start = time.time()
 game_start  = time.time()
 history = deque(maxlen=5)
@@ -179,13 +184,13 @@ while True:
     if detected == current_name and (time.time() - round_start) <= 2.0:
         score += 1
         H, W = frame.shape[:2]
-        cv2.putText(frame, "¡ACIERTO!", (W//2 - 120, H - 30),
+        cv2.putText(frame, "ACIERTO!", (W//2 - 120, H - 30),
                     font, 1.1, (0,255,0), 3)
-        current_name, _ = random.choice(TARGETS)
+        current_name = choose_new_target(current_name, TARGETS)
         round_start = time.time()
         history.clear()
     elif (time.time() - round_start) > 2.0:
-        current_name, _ = random.choice(TARGETS)
+        current_name = choose_new_target(current_name, TARGETS)
         round_start = time.time()
         history.clear()
 
