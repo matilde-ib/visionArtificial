@@ -1,11 +1,16 @@
 import cv2
 import numpy as np
 import math
+import sys
+import os
+
+# Añade la carpeta de módulos al sys.path
+sys.path.append(os.path.join(os.path.dirname(__file__), "tp_deteccion"))
 
 # Importa funciones de tu proyecto
-from contour import get_contours, filter_contours_by_area, get_bounding_rect
-from frame_editor import apply_color_convertion, threshold, denoise, draw_contours
-from trackbar import create_trackbar, get_trackbar_value
+from tp_deteccion.contour import get_contours, filter_contours_by_area, get_bounding_rect
+from tp_deteccion.frame_editor import apply_color_convertion, threshold, denoise, draw_contours
+from tp_deteccion.trackbar import create_trackbar, get_trackbar_value
 
 # Colores para anotaciones
 COLOR_GREEN = (0, 255, 0)
@@ -56,7 +61,11 @@ def main():
 
         # Procesamiento
         gray = apply_color_convertion(frame, cv2.COLOR_BGR2GRAY)
-        binary = threshold(gray, thresh_val, 255, cv2.THRESH_BINARY)
+        # Asegura que threshold retorna la imagen binaria correctamente
+        binary = threshold(gray, 255, cv2.THRESH_BINARY, thresh_val)
+        if binary is None or binary.size == 0:
+            print("Imagen binaria vacía, saltando frame.")
+            continue
         clean = denoise(binary, cv2.MORPH_ELLIPSE, morph_size)
         contours = get_contours(clean, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         filtered = filter_contours_by_area(contours, 1000, 1e6)
