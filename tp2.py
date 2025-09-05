@@ -26,6 +26,11 @@ def get_reference_contours():
             print(f"Advertencia: No se pudo cargar la imagen de referencia '{path}'")
             continue
         _, bin_img = cv2.threshold(img, 127, 255, cv2.THRESH_BINARY)
+        # Invierte si el fondo es blanco y la figura es negra
+        white_px = np.sum(bin_img == 255)
+        black_px = np.sum(bin_img == 0)
+        if white_px > black_px:
+            bin_img = cv2.bitwise_not(bin_img)
         contours = get_contours(bin_img, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         if contours:
             refs[label] = max(contours, key=cv2.contourArea)
@@ -61,14 +66,18 @@ def main():
 
         # Procesamiento
         gray = apply_color_convertion(frame, cv2.COLOR_BGR2GRAY)
-        # Asegura que threshold retorna la imagen binaria correctamente
         binary = threshold(gray, 255, cv2.THRESH_BINARY, thresh_val)
+        # Invierte si el fondo es blanco y la figura es negra
+        white_px = np.sum(binary == 255)
+        black_px = np.sum(binary == 0)
+        if white_px > black_px:
+            binary = cv2.bitwise_not(binary)
         if binary is None or binary.size == 0:
             print("Imagen binaria vacía, saltando frame.")
             continue
         clean = denoise(binary, cv2.MORPH_ELLIPSE, morph_size)
         contours = get_contours(clean, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        filtered = filter_contours_by_area(contours, 1000, 1e6)
+        filtered = filter_contours_by_area(contours, 2000, 1e6)  # sube el área mínima
 
         annotated = frame.copy()
         for cnt in filtered:
@@ -76,13 +85,16 @@ def main():
             best_score = float("inf")
             for label, ref_cnt in reference_contours.items():
                 score = cv2.matchShapes(cnt, ref_cnt, cv2.CONTOURS_MATCH_I1, 0.0)
-                if score < match_thresh and score < best_score:
+                if score < best_score:
                     best_score = score
                     best_label = label
+            # Solo acepta si el score es suficientemente bajo
+            if best_score > match_thresh:
+                best_label = "Desconocido"
             color = COLOR_GREEN if best_label == "corazon" else COLOR_RED if best_label == "circulo" else COLOR_BLUE if best_label == "pentagono" else (255,255,255)
             draw_contours(annotated, [cnt], color, 2)
             x, y, _, _ = get_bounding_rect(cnt)
-            cv2.putText(annotated, best_label, (x, y-10), cv2.FONT_HERSHEY_SIMPLEX, 0.8, color, 2)
+            cv2.putText(annotated, f"{best_label} ({best_score:.3f})", (x, y-10), cv2.FONT_HERSHEY_SIMPLEX, 0.8, color, 2)
 
         cv2.imshow(window_name, annotated)
         if cv2.waitKey(1) & 0xFF == 27:  # ESC para salir
