@@ -3,9 +3,9 @@ import numpy as np
 import math
 
 # Importa funciones de tu proyecto
-from tp_deteccion.contour import get_contours, filter_contours_by_area, get_bounding_rect
-from tp_deteccion.frame_editor import apply_color_convertion, threshold, denoise, draw_contours
-from tp_deteccion.trackbar import create_trackbar, get_trackbar_value
+from contour import get_contours, filter_contours_by_area, get_bounding_rect
+from frame_editor import apply_color_convertion, threshold, denoise, draw_contours
+from trackbar import create_trackbar, get_trackbar_value
 
 # Colores para anotaciones
 COLOR_GREEN = (0, 255, 0)
@@ -17,6 +17,9 @@ def get_reference_contours():
     refs = {}
     for label, path in [("corazon", "corazon.png"), ("circulo", "circulo.png"), ("pentagono", "pentagono.png")]:
         img = cv2.imread(path, cv2.IMREAD_GRAYSCALE)
+        if img is None:
+            print(f"Advertencia: No se pudo cargar la imagen de referencia '{path}'")
+            continue
         _, bin_img = cv2.threshold(img, 127, 255, cv2.THRESH_BINARY)
         contours = get_contours(bin_img, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         if contours:
@@ -27,9 +30,12 @@ def main():
     window_name = 'Reconocimiento de Formas'
     cv2.namedWindow(window_name)
     cap = cv2.VideoCapture(0)
+    if not cap.isOpened():
+        print("No se pudo abrir la cámara.")
+        return
 
     # Barras de ajuste
-    create_trackbar('Umbral', window_name, 255)
+    create_trackbar('Umbral', window_name, 127)
     create_trackbar('Morph', window_name, 21)
     create_trackbar('MatchThresh x1000', window_name, 1000)
 
@@ -38,6 +44,7 @@ def main():
     while True:
         ret, frame = cap.read()
         if not ret:
+            print("No se pudo leer el frame de la cámara.")
             break
 
         # Leer valores de las barras
@@ -49,7 +56,7 @@ def main():
 
         # Procesamiento
         gray = apply_color_convertion(frame, cv2.COLOR_BGR2GRAY)
-        binary = threshold(gray, 255, cv2.THRESH_BINARY, thresh_val)
+        binary = threshold(gray, thresh_val, 255, cv2.THRESH_BINARY)
         clean = denoise(binary, cv2.MORPH_ELLIPSE, morph_size)
         contours = get_contours(clean, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         filtered = filter_contours_by_area(contours, 1000, 1e6)
