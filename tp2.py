@@ -1,5 +1,3 @@
-
-# --- NUEVO PROGRAMA REESCRITO ---
 import cv2
 import numpy as np
 import os
