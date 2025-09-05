@@ -1,6 +1,7 @@
 import cv2
 import numpy as np
 import os
+from PIL import Image  # <-- Agrega esta importación
 
 COLOR_GREEN = (0, 255, 0)
 COLOR_RED = (0, 0, 255)
@@ -9,11 +10,20 @@ COLOR_BLUE = (255, 0, 0)
 def cargar_contorno_referencia(nombre):
     base_path = os.path.join(os.path.dirname(__file__), "tp_deteccion", "figures")
     path = os.path.join(base_path, nombre)
-    img = cv2.imread(path, cv2.IMREAD_GRAYSCALE)
-    if img is None:
-        print(f"No se pudo cargar la imagen de referencia: {path}")
+    try:
+        img_pil = Image.open(path).convert("L")
+        img = np.array(img_pil)
+    except Exception as e:
+        print(f"No se pudo cargar la imagen de referencia: {path} ({e})")
         return None
-    _, bin_img = cv2.threshold(img, 127, 255, cv2.THRESH_BINARY_INV)
+    # Detecta automáticamente si la figura es más clara o más oscura que el fondo
+    mean_val = np.mean(img)
+    if mean_val > 127:
+        # Fondo claro, figura oscura
+        _, bin_img = cv2.threshold(img, 127, 255, cv2.THRESH_BINARY_INV)
+    else:
+        # Fondo oscuro, figura clara
+        _, bin_img = cv2.threshold(img, 127, 255, cv2.THRESH_BINARY)
     contornos, _ = cv2.findContours(bin_img, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     if not contornos:
         print(f"No se encontraron contornos en la imagen de referencia: {nombre}")
@@ -22,7 +32,13 @@ def cargar_contorno_referencia(nombre):
 
 def preprocesar(frame, thresh_val, morph_size):
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-    _, binary = cv2.threshold(gray, thresh_val, 255, cv2.THRESH_BINARY_INV)
+    mean_val = np.mean(gray)
+    if mean_val > 127:
+        # Fondo claro, figura oscura
+        _, binary = cv2.threshold(gray, thresh_val, 255, cv2.THRESH_BINARY_INV)
+    else:
+        # Fondo oscuro, figura clara
+        _, binary = cv2.threshold(gray, thresh_val, 255, cv2.THRESH_BINARY)
     kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (morph_size, morph_size))
     clean = cv2.morphologyEx(binary, cv2.MORPH_OPEN, kernel)
     clean = cv2.morphologyEx(clean, cv2.MORPH_CLOSE, kernel)
