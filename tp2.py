@@ -1,50 +1,52 @@
+
+# --- NUEVO PROGRAMA REESCRITO ---
 import cv2
 import numpy as np
-import math
-import sys
 import os
 
-# Añade la carpeta de módulos al sys.path
-sys.path.append(os.path.join(os.path.dirname(__file__), "tp_deteccion"))
-
-# Importa funciones de tu proyecto
-from tp_deteccion.contour import get_contours, filter_contours_by_area, get_bounding_rect
-from tp_deteccion.frame_editor import apply_color_convertion, threshold, denoise, draw_contours
-from tp_deteccion.trackbar import create_trackbar, get_trackbar_value
-
-# Colores para anotaciones
 COLOR_GREEN = (0, 255, 0)
 COLOR_RED = (0, 0, 255)
 COLOR_BLUE = (255, 0, 0)
 
-# Carga los contornos de referencia de las imágenes de entrenamiento
-def get_reference_contours():
-    refs = {}
-    for label, path in [("corazon", "corazon.png"), ("circulo", "circulo.png"), ("pentagono", "pentagono.png")]:
-        img = cv2.imread(path, cv2.IMREAD_GRAYSCALE)
-        if img is None:
-            print(f"Advertencia: No se pudo cargar la imagen de referencia '{path}'")
-            continue
-        _, bin_img = cv2.threshold(img, 127, 255, cv2.THRESH_BINARY)
-        contours = get_contours(bin_img, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        if contours:
-            refs[label] = max(contours, key=cv2.contourArea)
-    return refs
+def cargar_contorno_referencia(nombre):
+    base_path = os.path.join(os.path.dirname(__file__), "tp_deteccion", "figures")
+    path = os.path.join(base_path, nombre)
+    img = cv2.imread(path, cv2.IMREAD_GRAYSCALE)
+    if img is None:
+        print(f"No se pudo cargar la imagen de referencia: {path}")
+        return None
+    _, bin_img = cv2.threshold(img, 127, 255, cv2.THRESH_BINARY_INV)
+    contornos, _ = cv2.findContours(bin_img, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    if not contornos:
+        print(f"No se encontraron contornos en la imagen de referencia: {nombre}")
+        return None
+    return max(contornos, key=cv2.contourArea)
+
+def preprocesar(frame, thresh_val, morph_size):
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    _, binary = cv2.threshold(gray, thresh_val, 255, cv2.THRESH_BINARY_INV)
+    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (morph_size, morph_size))
+    clean = cv2.morphologyEx(binary, cv2.MORPH_OPEN, kernel)
+    clean = cv2.morphologyEx(clean, cv2.MORPH_CLOSE, kernel)
+    return clean
 
 def main():
-    window_name = 'Reconocimiento de Formas'
-    cv2.namedWindow(window_name)
+    window = "Formas"
+    cv2.namedWindow(window)
+    cv2.createTrackbar("Umbral", window, 127, 255, lambda x: None)
+    cv2.createTrackbar("Morph", window, 5, 31, lambda x: None)
+    cv2.createTrackbar("Match x1000", window, 100, 2000, lambda x: None)
+
+    referencias = {
+        "corazon": cargar_contorno_referencia("corazon1.png"),
+        "circulo": cargar_contorno_referencia("circulo1.png"),
+        "pentagono": cargar_contorno_referencia("pentagono1.png")
+    }
+
     cap = cv2.VideoCapture(0)
     if not cap.isOpened():
         print("No se pudo abrir la cámara.")
         return
-
-    # Barras de ajuste
-    create_trackbar('Umbral', window_name, 127)
-    create_trackbar('Morph', window_name, 21)
-    create_trackbar('MatchThresh x1000', window_name, 1000)
-
-    reference_contours = get_reference_contours()
 
     while True:
         ret, frame = cap.read()
@@ -52,40 +54,34 @@ def main():
             print("No se pudo leer el frame de la cámara.")
             break
 
-        # Leer valores de las barras
-        thresh_val = get_trackbar_value('Umbral', window_name)
-        morph_size = get_trackbar_value('Morph', window_name)
+        thresh_val = cv2.getTrackbarPos("Umbral", window)
+        morph_size = cv2.getTrackbarPos("Morph", window)
         if morph_size < 1: morph_size = 1
         if morph_size % 2 == 0: morph_size += 1
-        match_thresh = get_trackbar_value('MatchThresh x1000', window_name) / 1000.0
+        match_thresh = cv2.getTrackbarPos("Match x1000", window) / 1000.0
 
-        # Procesamiento
-        gray = apply_color_convertion(frame, cv2.COLOR_BGR2GRAY)
-        # Asegura que threshold retorna la imagen binaria correctamente
-        binary = threshold(gray, 255, cv2.THRESH_BINARY, thresh_val)
-        if binary is None or binary.size == 0:
-            print("Imagen binaria vacía, saltando frame.")
-            continue
-        clean = denoise(binary, cv2.MORPH_ELLIPSE, morph_size)
-        contours = get_contours(clean, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        filtered = filter_contours_by_area(contours, 1000, 1e6)
+        clean = preprocesar(frame, thresh_val, morph_size)
+        contornos, _ = cv2.findContours(clean, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        frame_out = frame.copy()
 
-        annotated = frame.copy()
-        for cnt in filtered:
-            best_label = "Desconocido"
-            best_score = float("inf")
-            for label, ref_cnt in reference_contours.items():
-                score = cv2.matchShapes(cnt, ref_cnt, cv2.CONTOURS_MATCH_I1, 0.0)
-                if score < match_thresh and score < best_score:
-                    best_score = score
-                    best_label = label
-            color = COLOR_GREEN if best_label == "corazon" else COLOR_RED if best_label == "circulo" else COLOR_BLUE if best_label == "pentagono" else (255,255,255)
-            draw_contours(annotated, [cnt], color, 2)
-            x, y, _, _ = get_bounding_rect(cnt)
-            cv2.putText(annotated, best_label, (x, y-10), cv2.FONT_HERSHEY_SIMPLEX, 0.8, color, 2)
+        for cnt in contornos:
+            area = cv2.contourArea(cnt)
+            if area < 1000: continue
+            mejor_label = "Desconocido"
+            mejor_score = float("inf")
+            for label, ref in referencias.items():
+                if ref is None: continue
+                score = cv2.matchShapes(cnt, ref, cv2.CONTOURS_MATCH_I1, 0.0)
+                if score < match_thresh and score < mejor_score:
+                    mejor_score = score
+                    mejor_label = label
+            color = COLOR_GREEN if mejor_label == "corazon" else COLOR_RED if mejor_label == "circulo" else COLOR_BLUE if mejor_label == "pentagono" else (255,255,255)
+            cv2.drawContours(frame_out, [cnt], -1, color, 2)
+            x, y, w, h = cv2.boundingRect(cnt)
+            cv2.putText(frame_out, mejor_label, (x, y-10), cv2.FONT_HERSHEY_SIMPLEX, 0.8, color, 2)
 
-        cv2.imshow(window_name, annotated)
-        if cv2.waitKey(1) & 0xFF == 27:  # ESC para salir
+        cv2.imshow(window, frame_out)
+        if cv2.waitKey(1) & 0xFF == 27:
             break
 
     cap.release()
