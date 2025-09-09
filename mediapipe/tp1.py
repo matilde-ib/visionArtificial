@@ -210,3 +210,5 @@ cv2.putText(final, f"Puntaje final: {score}", (170,200),
 cv2.imshow("Resultado", final)
 cv2.waitKey(3000)
 cv2.destroyAllWindows()
+
+
