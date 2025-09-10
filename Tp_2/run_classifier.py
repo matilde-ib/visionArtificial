@@ -70,6 +70,7 @@ def main():
     cv2.createTrackbar("Kernel denoise",  window, 7,   31,  lambda x: None)
     cv2.createTrackbar("Min Area",        window, 3000,200000, lambda x: None)
     cv2.createTrackbar("Max Area",        window,120000,400000, lambda x: None)
+    cv2.createTrackbar("Max Figures",      window, 1,   10,  lambda x: None)  # Nueva barra para limitar figuras
 
     cap = cv2.VideoCapture(0)
     if not cap.isOpened():
@@ -85,26 +86,30 @@ def main():
         k     = cv2.getTrackbarPos("Kernel denoise", window)
         amin  = cv2.getTrackbarPos("Min Area",       window)
         amax  = cv2.getTrackbarPos("Max Area",       window)
+        max_figs = cv2.getTrackbarPos("Max Figures", window)
+        if max_figs < 1: max_figs = 1
 
         # Dos máscaras (normal e invertida), por Otsu o Manual
         m1, m2 = (masks_otsu(frame, k) if use_o == 1 else masks_manual(frame, thr, k))
-        c1 = pick_best_contour(frame, m1, amin, amax)
-        c2 = pick_best_contour(frame, m2, amin, amax)
+        contours1, _ = cv2.findContours(m1, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        contours2, _ = cv2.findContours(m2, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        H, W = frame.shape[:2]
+        frame_area = H * W
+        # Filtra y une candidatos de ambas máscaras, guardando de dónde vienen
+        cands = [(c, "m1") for c in contours1 if amin <= cv2.contourArea(c) <= min(amax, 0.8 * frame_area)]
+        cands += [(c, "m2") for c in contours2 if amin <= cv2.contourArea(c) <= min(amax, 0.8 * frame_area)]
+        # Ordena por área descendente y toma hasta max_figs
+        cands = sorted(cands, key=lambda x: cv2.contourArea(x[0]), reverse=True)[:max_figs]
 
-        # Elegir el mejor contorno de ambos (por área)
-        candidates = [c for c in (c1, c2) if c is not None]
-        cnt = max(candidates, key=cv2.contourArea) if candidates else None
-
-        # Para debug, mostramos la máscara “ganadora”
-        mask_debug = m1 if cnt is c1 else (m2 if cnt is c2 else m1)
+        # Para debug, muestra la máscara de la figura más grande (si hay)
+        mask_debug = m1 if (cands and cands[0][1] == "m1") else (m2 if (cands and cands[0][1] == "m2") else m1)
 
         out = frame.copy()
-        if cnt is not None:
+        for cnt, _ in cands:
             hu = hu_log_sign(cnt)
             sample = np.array(list(hu), dtype=np.float32).reshape(1, -1)
             label = clf.predict(sample)[0]  # 'corazon'/'circulo'/'pentagono'
             color = COLOR.get(label, (255,255,255))
-
             cv2.drawContours(out, [cnt], -1, color, 2)
             x, y, w, h = cv2.boundingRect(cnt)
             cv2.putText(out, str(label), (x, y-10),
